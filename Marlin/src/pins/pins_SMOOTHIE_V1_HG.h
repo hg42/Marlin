@@ -134,7 +134,9 @@
 #define HEATER_0_PIN       P2_07 // big MOSFET for hotend
 #define HEATER_1_PIN       P2_05 // big MOSFET for hotend
 #define FAN_PIN            P2_04
-#define FAN1_PIN           P2_06
+//#define FAN1_PIN           P2_06
+//#define FAN1_PIN           P2_05
+//#define FAN1_PIN           P1_23
 
 
 /* ??? TODO
