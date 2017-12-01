@@ -320,6 +320,10 @@
   #include "pins_AZTEEG_X5_GT.h"
 #elif MB(BIQU_BQ111_A4)
   #include "pins_BIQU_BQ111_A4.h"
+#elif MB(SMOOTHIE_V1_OLD)
+  #include "pins_SMOOTHIE_V1_OLD.h"  // old version of smoothieboard v1
+#elif MB(SMOOTHIE_V1_HG)
+  #include "pins_SMOOTHIE_V1_HG.h"   // HG version of smoothieboard v1
 #else
   #error "Unknown MOTHERBOARD value set in Configuration.h"
 #endif

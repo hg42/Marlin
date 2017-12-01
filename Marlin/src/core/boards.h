@@ -151,6 +151,8 @@
 #define BOARD_AZSMZ_MINI          1751  // AZSMZ Mini
 #define BOARD_AZTEEG_X5_GT        1752  // Azteeg X5 GT (Power outputs: Hotend0, Hotend1, Bed, Fan)
 #define BOARD_BIQU_BQ111_A4       1753  // BIQU BQ111-A4 (Power outputs: Hotend, Fan, Bed)
+#define BOARD_SMOOTHIE_V1_OLD     7701  // Smoothieboard v1 old
+#define BOARD_SMOOTHIE_V1_HG      7777  // Smoothieboard v1 HG
 
 //
 // SAM3X8E ARM Cortex M3
