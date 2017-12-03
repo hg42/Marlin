@@ -135,6 +135,20 @@ float Planner::min_feedrate_mm_s,
   #endif
 #endif
 
+#if ENABLED(SKEW_CORRECTION)
+  #if ENABLED(SKEW_CORRECTION_GCODE)
+    // Initialized by settings.load()
+    float Planner::xy_skew_factor;
+    #if ENABLED(SKEW_CORRECTION_FOR_Z)
+      float Planner::xz_skew_factor, Planner::yz_skew_factor;
+    #else
+      constexpr float Planner::xz_skew_factor, Planner::yz_skew_factor;
+    #endif
+  #else
+    constexpr float Planner::xy_skew_factor, Planner::xz_skew_factor, Planner::yz_skew_factor;
+  #endif
+#endif
+
 #if ENABLED(AUTOTEMP)
   float Planner::autotemp_max = 250,
         Planner::autotemp_min = 210,
@@ -201,14 +215,18 @@ void Planner::calculate_trapezoid_for_block(block_t* const block, const float &e
   NOLESS(initial_rate, MINIMAL_STEP_RATE);
   NOLESS(final_rate, MINIMAL_STEP_RATE);
 
-  int32_t accel = block->acceleration_steps_per_s2,
-          accelerate_steps = CEIL(estimate_acceleration_distance(initial_rate, block->nominal_rate, accel)),
+  const int32_t accel = block->acceleration_steps_per_s2;
+
+          // Steps required for acceleration, deceleration to/from nominal rate
+  int32_t accelerate_steps = CEIL(estimate_acceleration_distance(initial_rate, block->nominal_rate, accel)),
           decelerate_steps = FLOOR(estimate_acceleration_distance(block->nominal_rate, final_rate, -accel)),
+          // Steps between acceleration and deceleration, if any
           plateau_steps = block->step_event_count - accelerate_steps - decelerate_steps;
 
-  // Is the Plateau of Nominal Rate smaller than nothing? That means no cruising, and we will
-  // have to use intersection_distance() to calculate when to abort accel and start braking
-  // in order to reach the final_rate exactly at the end of this block.
+  // Does accelerate_steps + decelerate_steps exceed step_event_count?
+  // Then we can't possibly reach the nominal rate, there will be no cruising.
+  // Use intersection_distance() to calculate accel / braking time in order to
+  // reach the final_rate exactly at the end of this block.
   if (plateau_steps < 0) {
     accelerate_steps = CEIL(intersection_distance(initial_rate, final_rate, accel, block->step_event_count));
     NOLESS(accelerate_steps, 0); // Check limits due to numerical round-off
@@ -565,6 +583,19 @@ void Planner::calculate_volumetric_multipliers() {
    */
   void Planner::apply_leveling(float &rx, float &ry, float &rz) {
 
+    #if ENABLED(SKEW_CORRECTION)
+      if (WITHIN(rx, X_MIN_POS + 1, X_MAX_POS) && WITHIN(ry, Y_MIN_POS + 1, Y_MAX_POS)) {
+        const float tempry = ry - (rz * planner.yz_skew_factor),
+                    temprx = rx - (ry * planner.xy_skew_factor) - (rz * (planner.xz_skew_factor - (planner.xy_skew_factor * planner.yz_skew_factor)));
+        if (WITHIN(temprx, X_MIN_POS, X_MAX_POS) && WITHIN(tempry, Y_MIN_POS, Y_MAX_POS)) {
+          rx = temprx;
+          ry = tempry;
+        }
+        else
+          SERIAL_ECHOLN(MSG_SKEW_WARN);
+      }
+    #endif
+
     if (!leveling_active) return;
 
     #if ABL_PLANAR
@@ -611,45 +642,56 @@ void Planner::calculate_volumetric_multipliers() {
 
   void Planner::unapply_leveling(float raw[XYZ]) {
 
-    if (!leveling_active) return;
-
-    #if ABL_PLANAR
-
-      matrix_3x3 inverse = matrix_3x3::transpose(bed_level_matrix);
-
-      float dx = raw[X_AXIS] - (X_TILT_FULCRUM),
-            dy = raw[Y_AXIS] - (Y_TILT_FULCRUM);
-
-      apply_rotation_xyz(inverse, dx, dy, raw[Z_AXIS]);
-
-      raw[X_AXIS] = dx + X_TILT_FULCRUM;
-      raw[Y_AXIS] = dy + Y_TILT_FULCRUM;
-
+    #if ENABLED(ENABLE_LEVELING_FADE_HEIGHT)
+      const float fade_scaling_factor = fade_scaling_factor_for_z(raw[Z_AXIS]);
     #else
+      constexpr float fade_scaling_factor = 1.0;
+    #endif
 
-      #if ENABLED(ENABLE_LEVELING_FADE_HEIGHT)
-        const float fade_scaling_factor = fade_scaling_factor_for_z(raw[Z_AXIS]);
-        if (!fade_scaling_factor) return;
-      #elif HAS_MESH
-        constexpr float fade_scaling_factor = 1.0;
-      #endif
+    if (leveling_active && fade_scaling_factor) {
 
-      raw[Z_AXIS] -= (
-        #if ENABLED(AUTO_BED_LEVELING_UBL)
-          ubl.get_z_correction(raw[X_AXIS], raw[Y_AXIS]) * fade_scaling_factor
-        #elif ENABLED(MESH_BED_LEVELING)
-          mbl.get_z(raw[X_AXIS], raw[Y_AXIS]
-            #if ENABLED(ENABLE_LEVELING_FADE_HEIGHT)
-              , fade_scaling_factor
-            #endif
-          )
-        #elif ENABLED(AUTO_BED_LEVELING_BILINEAR)
-          bilinear_z_offset(raw) * fade_scaling_factor
-        #else
-          0
-        #endif
-      );
+      #if ABL_PLANAR
 
+        matrix_3x3 inverse = matrix_3x3::transpose(bed_level_matrix);
+
+        float dx = raw[X_AXIS] - (X_TILT_FULCRUM),
+              dy = raw[Y_AXIS] - (Y_TILT_FULCRUM);
+
+        apply_rotation_xyz(inverse, dx, dy, raw[Z_AXIS]);
+
+        raw[X_AXIS] = dx + X_TILT_FULCRUM;
+        raw[Y_AXIS] = dy + Y_TILT_FULCRUM;
+
+      #else // !ABL_PLANAR
+
+        raw[Z_AXIS] -= (
+          #if ENABLED(AUTO_BED_LEVELING_UBL)
+            ubl.get_z_correction(raw[X_AXIS], raw[Y_AXIS]) * fade_scaling_factor
+          #elif ENABLED(MESH_BED_LEVELING)
+            mbl.get_z(raw[X_AXIS], raw[Y_AXIS]
+              #if ENABLED(ENABLE_LEVELING_FADE_HEIGHT)
+                , fade_scaling_factor
+              #endif
+            )
+          #elif ENABLED(AUTO_BED_LEVELING_BILINEAR)
+            bilinear_z_offset(raw) * fade_scaling_factor
+          #else
+            0
+          #endif
+        );
+
+      #endif // !ABL_PLANAR
+    }
+
+    #if ENABLED(SKEW_CORRECTION)
+      if (WITHIN(raw[X_AXIS], X_MIN_POS, X_MAX_POS) && WITHIN(raw[Y_AXIS], Y_MIN_POS, Y_MAX_POS)) {
+        const float temprx = raw[X_AXIS] + raw[Y_AXIS] * planner.xy_skew_factor + raw[Z_AXIS] * planner.xz_skew_factor,
+                    tempry = raw[Y_AXIS] + raw[Z_AXIS] * planner.yz_skew_factor;
+        if (WITHIN(temprx, X_MIN_POS, X_MAX_POS) && WITHIN(tempry, Y_MIN_POS, Y_MAX_POS)) {
+          raw[X_AXIS] = temprx;
+          raw[Y_AXIS] = tempry;
+        }
+      }
     #endif
   }
 
@@ -658,13 +700,13 @@ void Planner::calculate_volumetric_multipliers() {
 /**
  * Planner::_buffer_line
  *
- * Add a new linear movement to the buffer.
+ * Add a new linear movement to the buffer in axis units.
  *
  * Leveling and kinematics should be applied ahead of calling this.
  *
- *  a,b,c,e     - target positions in mm or degrees
- *  fr_mm_s     - (target) speed of the move
- *  extruder    - target extruder
+ *  a,b,c,e   - target positions in mm and/or degrees
+ *  fr_mm_s   - (target) speed of the move
+ *  extruder  - target extruder
  */
 void Planner::_buffer_line(const float &a, const float &b, const float &c, const float &e, float fr_mm_s, const uint8_t extruder) {
 
@@ -712,6 +754,10 @@ void Planner::_buffer_line(const float &a, const float &b, const float &c, const
   SERIAL_CHAR(')');
   SERIAL_EOL();
   //*/
+
+  // DRYRUN ignores all temperature constraints and assures that the extruder is instantly satisfied
+  if (DEBUGGING(DRYRUN))
+    position[E_AXIS] = target[E_AXIS];
 
   int32_t de = target[E_AXIS] - position[E_AXIS];
 
@@ -1010,22 +1056,23 @@ void Planner::_buffer_line(const float &a, const float &b, const float &c, const
   }
   float inverse_millimeters = 1.0 / block->millimeters;  // Inverse millimeters to remove multiple divides
 
-  // Calculate moves/second for this move. No divide by zero due to previous checks.
-  float inverse_mm_s = fr_mm_s * inverse_millimeters;
+  // Calculate inverse time for this move. No divide by zero due to previous checks.
+  // Example: At 120mm/s a 60mm move takes 0.5s. So this will give 2.0.
+  float inverse_secs = fr_mm_s * inverse_millimeters;
 
   const uint8_t moves_queued = movesplanned();
 
   // Slow down when the buffer starts to empty, rather than wait at the corner for a buffer refill
   #if ENABLED(SLOWDOWN) || ENABLED(ULTRA_LCD) || defined(XY_FREQUENCY_LIMIT)
     // Segment time im micro seconds
-    uint32_t segment_time_us = LROUND(1000000.0 / inverse_mm_s);
+    uint32_t segment_time_us = LROUND(1000000.0 / inverse_secs);
   #endif
   #if ENABLED(SLOWDOWN)
     if (WITHIN(moves_queued, 2, (BLOCK_BUFFER_SIZE) / 2 - 1)) {
       if (segment_time_us < min_segment_time_us) {
         // buffer is draining, add extra time.  The amount of time added increases if the buffer is still emptied more.
         const uint32_t nst = segment_time_us + LROUND(2 * (min_segment_time_us - segment_time_us) / moves_queued);
-        inverse_mm_s = 1000000.0 / nst;
+        inverse_secs = 1000000.0 / nst;
         #if defined(XY_FREQUENCY_LIMIT) || ENABLED(ULTRA_LCD)
           segment_time_us = nst;
         #endif
@@ -1039,8 +1086,8 @@ void Planner::_buffer_line(const float &a, const float &b, const float &c, const
     CRITICAL_SECTION_END
   #endif
 
-  block->nominal_speed = block->millimeters * inverse_mm_s; // (mm/sec) Always > 0
-  block->nominal_rate = CEIL(block->step_event_count * inverse_mm_s); // (step/sec) Always > 0
+  block->nominal_speed = block->millimeters * inverse_secs;           //   (mm/sec) Always > 0
+  block->nominal_rate = CEIL(block->step_event_count * inverse_secs); // (step/sec) Always > 0
 
   #if ENABLED(FILAMENT_WIDTH_SENSOR)
     static float filwidth_e_count = 0, filwidth_delay_dist = 0;
@@ -1079,7 +1126,7 @@ void Planner::_buffer_line(const float &a, const float &b, const float &c, const
   // Calculate and limit speed in mm/sec for each axis
   float current_speed[NUM_AXIS], speed_factor = 1.0; // factor <1 decreases speed
   LOOP_XYZE(i) {
-    const float cs = FABS((current_speed[i] = delta_mm[i] * inverse_mm_s));
+    const float cs = FABS((current_speed[i] = delta_mm[i] * inverse_secs));
     #if ENABLED(DISTINCT_E_FACTORS)
       if (i == E_AXIS) i += extruder;
     #endif

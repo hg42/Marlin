@@ -180,6 +180,23 @@ class Planner {
       static float extruder_advance_k, advance_ed_ratio;
     #endif
 
+    #if ENABLED(SKEW_CORRECTION)
+      #if ENABLED(SKEW_CORRECTION_GCODE)
+        static float xy_skew_factor;
+      #else
+        static constexpr float xy_skew_factor = XY_SKEW_FACTOR;
+      #endif
+      #if ENABLED(SKEW_CORRECTION_FOR_Z)
+        #if ENABLED(SKEW_CORRECTION_GCODE)
+          static float xz_skew_factor, yz_skew_factor;
+        #else
+          static constexpr float xz_skew_factor = XZ_SKEW_FACTOR, yz_skew_factor = YZ_SKEW_FACTOR;
+        #endif
+      #else
+        static constexpr float xz_skew_factor = 0, yz_skew_factor = 0;
+      #endif
+    #endif
+
   private:
 
     /**
@@ -435,6 +452,7 @@ class Planner {
     /**
      * The current block. NULL if the buffer is empty.
      * This also marks the block as busy.
+     * WARNING: Called from Stepper ISR context!
      */
     static block_t* get_current_block() {
       if (blocks_queued()) {
@@ -488,8 +506,8 @@ class Planner {
     /**
      * Get the index of the next / previous block in the ring buffer
      */
-    static int8_t next_block_index(int8_t block_index) { return BLOCK_MOD(block_index + 1); }
-    static int8_t prev_block_index(int8_t block_index) { return BLOCK_MOD(block_index - 1); }
+    static int8_t next_block_index(const int8_t block_index) { return BLOCK_MOD(block_index + 1); }
+    static int8_t prev_block_index(const int8_t block_index) { return BLOCK_MOD(block_index - 1); }
 
     /**
      * Calculate the distance (not time) it takes to accelerate
@@ -501,7 +519,7 @@ class Planner {
     }
 
     /**
-     * Return the point at which you must start braking (at the rate of -'acceleration') if
+     * Return the point at which you must start braking (at the rate of -'accel') if
      * you start at 'initial_rate', accelerate (until reaching the point), and want to end at
      * 'final_rate' after traveling 'distance'.
      *

@@ -262,7 +262,7 @@
 
   // 256 is the max limit due to uint8_t head and tail. Use only powers of 2. (...,16,32,64,128,256)
   #if TX_BUFFER_SIZE && (TX_BUFFER_SIZE < 2 || TX_BUFFER_SIZE > 256 || !IS_POWER_OF_2(TX_BUFFER_SIZE))
-    #error "TX_BUFFER_SIZE must be 0 or a power of 2 greater than 1."
+    #error "TX_BUFFER_SIZE must be 0, a power of 2 greater than 1, and no greater than 256."
   #endif
 #endif
 
@@ -1481,6 +1481,20 @@ static_assert(COUNT(sanity_arr_3) <= XYZE_N, "DEFAULT_MAX_ACCELERATION has too m
 
 #if ENABLED(LED_CONTROL_MENU) && DISABLED(ULTIPANEL)
   #error "LED_CONTROL_MENU requires an LCD controller."
+#endif
+
+#if ENABLED(SKEW_CORRECTION)
+  #if !defined(XY_SKEW_FACTOR) && !(defined(XY_DIAG_AC) && defined(XY_DIAG_BD) && defined(XY_SIDE_AD))
+    #error "SKEW_CORRECTION requires XY_SKEW_FACTOR or XY_DIAG_AC, XY_DIAG_BD, XY_SIDE_AD."
+  #endif
+  #if ENABLED(SKEW_CORRECTION_FOR_Z)
+    #if !defined(XZ_SKEW_FACTOR) && !(defined(XZ_DIAG_AC) && defined(XZ_DIAG_BD) && defined(XZ_SIDE_AD))
+      #error "SKEW_CORRECTION requires XZ_SKEW_FACTOR or XZ_DIAG_AC, XZ_DIAG_BD, XZ_SIDE_AD."
+    #endif
+    #if !defined(YZ_SKEW_FACTOR) && !(defined(YZ_DIAG_AC) && defined(YZ_DIAG_BD) && defined(YZ_SIDE_AD))
+      #error "SKEW_CORRECTION requires YZ_SKEW_FACTOR or YZ_DIAG_AC, YZ_DIAG_BD, YZ_SIDE_AD."
+    #endif
+  #endif
 #endif
 
 #endif // _SANITYCHECK_H_
