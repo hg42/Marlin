@@ -706,7 +706,7 @@ void Planner::calculate_volumetric_multipliers() {
  *  fr_mm_s   - (target) speed of the move
  *  extruder  - target extruder
  */
-void Planner::_buffer_steps(const int32_t target[XYZE], float fr_mm_s, const uint8_t extruder) {
+void Planner::_buffer_steps(const int32_t (&target)[XYZE], float fr_mm_s, const uint8_t extruder) {
 
   const int32_t da = target[X_AXIS] - position[X_AXIS],
                 db = target[Y_AXIS] - position[Y_AXIS],
@@ -720,9 +720,9 @@ void Planner::_buffer_steps(const int32_t target[XYZE], float fr_mm_s, const uin
     SERIAL_ECHOPAIR(" (", da);
     SERIAL_ECHOPAIR(" steps) B:", target[B_AXIS]);
     SERIAL_ECHOPAIR(" (", db);
-    SERIAL_ECHOLNPGM(" steps) C:", target[C_AXIS]);
+    SERIAL_ECHOPAIR(" steps) C:", target[C_AXIS]);
     SERIAL_ECHOPAIR(" (", dc);
-    SERIAL_ECHOLNPGM(" steps) E:", target[E_AXIS]);
+    SERIAL_ECHOPAIR(" steps) E:", target[E_AXIS]);
     SERIAL_ECHOPAIR(" (", de);
     SERIAL_ECHOLNPGM(" steps)");
   //*/
@@ -1380,6 +1380,7 @@ void Planner::_buffer_steps(const int32_t target[XYZE], float fr_mm_s, const uin
   block_buffer_head = next_buffer_head;
 
   // Update the position (only when a move was queued)
+  static_assert(COUNT(target) > 1, "array as function parameter should be declared as reference and with count");
   COPY(position, target);
 
   recalculate();
@@ -1419,23 +1420,28 @@ void Planner::_buffer_line(const float &a, const float &b, const float &c, const
     SERIAL_ECHOPAIR("  _buffer_line FR:", fr_mm_s);
     #if IS_KINEMATIC
       SERIAL_ECHOPAIR(" A:", a);
-      SERIAL_ECHOPAIR(" (", target[A_AXIS]);
-      SERIAL_ECHOPAIR(" steps) B:", b);
+      SERIAL_ECHOPAIR(" (", position[A_AXIS]);
+      SERIAL_ECHOPAIR("  -> ", target[A_AXIS]);
+      SERIAL_ECHOPAIR(") B:", b);
     #else
       SERIAL_ECHOPAIR(" X:", a);
-      SERIAL_ECHOPAIR(" (", target[X_AXIS]);
-      SERIAL_ECHOPAIR(" steps) Y:", b);
+      SERIAL_ECHOPAIR(" (", position[X_AXIS]);
+      SERIAL_ECHOPAIR(" -> ", target[X_AXIS]);
+      SERIAL_ECHOPAIR(") Y:", b);
     #endif
-    SERIAL_ECHOPAIR(" (", target[Y_AXIS]);
+    SERIAL_ECHOPAIR(" (", position[Y_AXIS]);
+    SERIAL_ECHOPAIR(" -> ", target[Y_AXIS]);
     #if ENABLED(DELTA)
-      SERIAL_ECHOPAIR(" steps) C:", c);
+      SERIAL_ECHOPAIR(") C:", c);
     #else
-      SERIAL_ECHOPAIR(" steps) Z:", c);
+      SERIAL_ECHOPAIR(") Z:", c);
     #endif
-    SERIAL_ECHOPAIR(" (", target[Z_AXIS]);
-    SERIAL_ECHOPAIR(" steps) E:", e);
-    SERIAL_ECHOPAIR(" (", target[E_AXIS]);
-    SERIAL_ECHOLNPGM(" steps)");
+    SERIAL_ECHOPAIR(" (", position[Z_AXIS]);
+    SERIAL_ECHOPAIR(" -> ", target[Z_AXIS]);
+    SERIAL_ECHOPAIR(") E:", e);
+    SERIAL_ECHOPAIR(" (", position[E_AXIS]);
+    SERIAL_ECHOPAIR(" -> ", target[E_AXIS]);
+    SERIAL_ECHOLNPGM(")");
   //*/
 
   // DRYRUN ignores all temperature constraints and assures that the extruder is instantly satisfied
